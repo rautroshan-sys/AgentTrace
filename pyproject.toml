@@ -1,0 +1,18 @@
+[project]
+name = "agenttrace"
+version = "0.1.0"
+description = "Local-first agent trace debugger and evaluation runner"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.162.5",
+    "pydantic>=2.14.3",
+    "pydantic-settings>=2.16.2",
+    "uvicorn>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.5.0",
+]
