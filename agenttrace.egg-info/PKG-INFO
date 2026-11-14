@@ -1,0 +1,9 @@
+Metadata-Version: 2.4
+Name: agenttrace
+Version: 0.1.0
+Summary: Local-first agent trace debugger and evaluation runner
+Requires-Python: >=3.11
+Requires-Dist: fastapi>=0.162.5
+Requires-Dist: pydantic>=2.14.3
+Requires-Dist: pydantic-settings>=2.16.2
+Requires-Dist: uvicorn>=0.54.0

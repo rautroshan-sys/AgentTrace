@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from agenttrace.db.database import initialize_database
 from agenttrace.db.repository import get_trace, insert_trace
 from agenttrace.models.trace import (
@@ -8,6 +10,8 @@ from agenttrace.models.trace import (
     SpanStatus,
     TraceCreate,
 )
+from agenttrace.sdk import exporter
+from agenttrace.sdk.context import SpanContext, get_current_span, set_current_span, trace_agent
 
 
 def make_trace() -> TraceCreate:
@@ -91,3 +95,75 @@ def test_insert_and_get_trace(tmp_path):
     assert tool_span["parent_span_id"] == "spn_agent"
     assert tool_span["status"] == "error"
     assert tool_span["error_type"] == "timeout"
+
+
+def test_trace_context_and_agent_decorator():
+    span = SpanContext(
+        span_id="spn_1",
+        trace_id="trc_1",
+        parent_span_id=None,
+        name="agent-root",
+        kind="agent",
+        started_at=datetime.now(timezone.utc),
+    )
+
+    token = set_current_span(span)
+    assert token is not None
+    assert get_current_span() == span
+
+    reset = set_current_span(None)
+    assert reset is not None
+    assert get_current_span() is None
+
+    @trace_agent(name="support-agent")
+    def get_response() -> str:
+        return "ok"
+
+    assert get_response() == "ok"
+
+
+def test_export_span_falls_back_to_sqlite(monkeypatch, tmp_path):
+    db_path = tmp_path / "fallback.db"
+    initialize_database(db_path)
+
+    def fail_http(*args, **kwargs):
+        raise RuntimeError("offline")
+
+    monkeypatch.setattr(exporter.httpx, "post", fail_http)
+
+    exporter.export_span(
+        span_id="spn_agent",
+        trace_id="trc_001",
+        parent_span_id=None,
+        name="support-agent",
+        kind="agent",
+        started_at=datetime.now(timezone.utc),
+        ended_at=datetime.now(timezone.utc),
+        duration_ms=12,
+        status=SpanStatus.OK,
+        db_path=str(db_path),
+    )
+
+    saved_trace = get_trace("trc_001", db_path=str(db_path))
+    assert saved_trace is not None
+    assert saved_trace["root_span_id"] == "spn_agent"
+    assert saved_trace["spans"][0]["parent_span_id"] is None
+
+
+def test_trace_agent_marks_error_when_wrapped_function_raises(monkeypatch):
+    calls = []
+
+    def record_export(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr("agenttrace.sdk.exporter.export_span", record_export)
+
+    @trace_agent(name="support-agent")
+    def fail():
+        raise TimeoutError("order service unavailable")
+
+    with pytest.raises(TimeoutError):
+        fail()
+
+    assert calls
+    assert calls[0]["status"] == SpanStatus.ERROR
